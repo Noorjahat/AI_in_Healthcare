@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>AI Healthcare Monitoring</title>
+
+<link rel="stylesheet" href="Style.css">
+
+</head>
+
+<body>
+
+<h1>AI Healthcare Monitoring System</h1>
+
+<form id="healthForm">
+
+<input type="text" id="name" placeholder="Patient Name" required>
+
+<select id="gender">
+<option>Male</option>
+<option>Female</option>
+</select>
+
+<input type="number" id="height" placeholder="Height (cm)" required>
+
+<input type="number" id="weight" placeholder="Weight (kg)" required>
+
+<input type="number" id="bp" placeholder="Blood Pressure" required>
+
+<input type="number" id="heart" placeholder="Heart Rate" required>
+
+<input type="number" id="chol" placeholder="Cholesterol Level" required>
+
+<button type="submit">Check Result</button>
+
+</form>
+
+<table id="resultTable">
+
+<tr>
+<th>Name</th>
+<th>Gender</th>
+<th>Height</th>
+<th>Weight</th>
+<th>Blood Pressure</th>
+<th>Heart Rate</th>
+<th>Cholesterol</th>
+<th>Health Status</th>
+</tr>
+
+</table>
+
+<script src="Script.js"></script>
+
+</body>
+</html>
