@@ -1,55 +1,830 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<title>AI Healthcare Monitoring</title>
-
-<link rel="stylesheet" href="Style.css">
-
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AI Healthcare Monitoring & Risk Analysis</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={theme:{extend:{colors:{primary:{50:'#f0fdfa',100:'#ccfbf1',200:'#99f6e4',300:'#5eead4',400:'#2dd4bf',500:'#14b8a6',600:'#0d9488',700:'#0f766e',800:'#115e59',900:'#134e4a'}},fontFamily:{sans:['Plus Jakarta Sans','sans-serif']}}}}</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:#f8fafc;color:#0f172a;overflow-x:hidden}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideIn{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes bounceIn{0%{transform:scale(.3);opacity:0}50%{transform:scale(1.05)}100%{transform:scale(1);opacity:1}}
+@keyframes toastIn{from{transform:translateX(120%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes typing{0%{opacity:.2}20%{opacity:1}100%{opacity:.2}}
+.anim-up{animation:fadeInUp .5s ease both}
+.anim-fade{animation:fadeIn .3s ease both}
+.anim-slide{animation:slideIn .4s ease both}
+.anim-bounce{animation:bounceIn .5s ease both}
+.anim-toast{animation:toastIn .3s ease both}
+.pulse-live{animation:pulse 2s infinite}
+.spinner{animation:spin .7s linear infinite;border:3px solid #e2e8f0;border-top-color:#0d9488;border-radius:50%;width:22px;height:22px}
+.d1{animation-delay:.05s}.d2{animation-delay:.1s}.d3{animation-delay:.15s}.d4{animation-delay:.2s}
+.sb::-webkit-scrollbar{width:5px}.sb::-webkit-scrollbar-track{background:#f1f5f9}.sb::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+.td{animation:typing 1.4s infinite}.td:nth-child(2){animation-delay:.2s}.td:nth-child(3){animation-delay:.4s}
+@media print{.no-print{display:none!important}}
+</style>
 </head>
+<body><div id="root"></div>
+<script type="text/babel">
+const{useState,useEffect,useRef,useContext,createContext,useCallback,useMemo}=React;
 
-<body>
+/* ── CONFIGURATION ── */
+const CONFIG = {
+  GOOGLE_APPS_SCRIPT_URL: '' // ← PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE
+};
 
-<h1>AI Healthcare Monitoring System</h1>
+/* ── API CLIENT ── */
+const api = {
+  async call(action, data = {}) {
+    if (!CONFIG.GOOGLE_APPS_SCRIPT_URL) throw new Error('Backend URL not configured. Please set it in CONFIG.');
+    const resp = await fetch(CONFIG.GOOGLE_APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // Avoid CORS preflight
+      body: JSON.stringify({ action, data })
+    });
+    if (!resp.ok) throw new Error('Network error. Please try again.');
+    const result = await resp.json();
+    if (!result.success) throw new Error(result.message || 'Request failed');
+    return result;
+  },
+  register(d) { return this.call('register', d); },
+  login(d) { return this.call('login', d); },
+  getProfile(d) { return this.call('getProfile', d); },
+  updateProfile(d) { return this.call('updateProfile', d); },
+  addHealthReading(d) { return this.call('addHealthReading', d); },
+  getHealthReadings(d) { return this.call('getHealthReadings', d); },
+  getAlerts(d) { return this.call('getAlerts', d); },
+  resolveAlert(d) { return this.call('resolveAlert', d); },
+  deleteAlert(d) { return this.call('deleteAlert', d); },
+  getReports(d) { return this.call('getReports', d); },
+  generateReport(d) { return this.call('generateReport', d); }
+};
 
-<form id="healthForm">
+/* ── CONSTANTS ── */
+const NAV=[
+  {id:'dashboard',label:'Dashboard',icon:'home'},
+  {id:'monitoring',label:'Live Monitoring',icon:'activity'},
+  {id:'analysis',label:'AI Risk Analysis',icon:'brain'},
+  {id:'trends',label:'Health Trends',icon:'trendingUp'},
+  {id:'alerts',label:'Alerts',icon:'bell'},
+  {id:'history',label:'Health History',icon:'clock'},
+  {id:'assistant',label:'AI Assistant',icon:'messageCircle'},
+  {id:'reports',label:'Reports',icon:'fileText'},
+  {id:'profile',label:'Profile',icon:'user'},
+  {id:'settings',label:'Settings',icon:'settings'}
+];
 
-<input type="text" id="name" placeholder="Patient Name" required>
+/* ── UTILITIES ── */
+const R=(a,b)=>a+Math.random()*(b-a);
+const RI=(a,b)=>Math.floor(R(a,b+1));
+const fD=d=>new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+const fT=d=>new Date(d).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+const fDT=d=>fD(d)+' '+fT(d);
 
-<select id="gender">
-<option>Male</option>
-<option>Female</option>
-</select>
+function calcRisk(v){
+  if(!v || !v.heartRate) return {score:0, level:'NO DATA', color:'#94a3b8', factors:[], conf:0};
+  let s=0;const f=[];
+  if(v.heartRate>100){s+=25;f.push('Elevated heart rate ('+v.heartRate+' BPM)')}else if(v.heartRate>90){s+=10;f.push('Slightly elevated heart rate')}else if(v.heartRate<50){s+=20;f.push('Low heart rate')}
+  if(v.spo2<90){s+=30;f.push('Critically low SpO2 ('+v.spo2+'%)')}else if(v.spo2<95){s+=15;f.push('Low SpO2 ('+v.spo2+'%)')}
+  if(v.temperature>38.5){s+=25;f.push('High temperature ('+v.temperature+'°C)')}else if(v.temperature>37.5){s+=10;f.push('Slightly elevated temperature')}
+  if(v.systolicBP>140||v.diastolicBP>90){s+=25;f.push('High BP ('+v.systolicBP+'/'+v.diastolicBP+')')}else if(v.systolicBP>130||v.diastolicBP>85){s+=10;f.push('Slightly elevated BP')}
+  if(v.age>60)s+=10;else if(v.age>45)s+=5;
+  s=Math.min(100,Math.max(0,s));
+  let lv,col;
+  if(s<=20){lv='NORMAL';col='#10b981'}else if(s<=40){lv='MONITOR';col='#f59e0b'}else if(s<=60){lv='ATTENTION REQUIRED';col='#f97316'}else{lv='HIGH RISK';col='#ef4444'}
+  return{score:s,level:lv,color:col,factors:f,conf:Math.floor(72+R(0,23))};
+}
 
-<input type="number" id="height" placeholder="Height (cm)" required>
+function gStat(v,val){
+  const r={heartRate:[60,100],spo2:[95,100],temperature:[36.1,37.5],systolicBP:[90,140],diastolicBP:[60,90]};
+  const rng=r[v];return rng?(val>=rng[0]&&val<=rng[1]?'normal':'abnormal'):'normal';
+}
 
-<input type="number" id="weight" placeholder="Weight (kg)" required>
+function simRead(){
+  const abnormal = Math.random() < 0.18;
+  let hr=RI(62,88), sp=RI(95,99), tmp=+(36.2+R(0,1)).toFixed(1), sys=RI(110,135), dia=RI(70,88);
+  if(abnormal){
+    const t=RI(0,3);
+    if(t===0)hr=RI(100,130);
+    else if(t===1)sp=RI(88,94);
+    else if(t===2)tmp=+(37.8+R(0,1.5)).toFixed(1);
+    else{sys=RI(140,170);dia=RI(95,110);}
+  }
+  return {heartRate:hr,spo2:sp,temperature:tmp,systolicBP:sys,diastolicBP:dia};
+}
 
-<input type="number" id="bp" placeholder="Blood Pressure" required>
+const mapReading = (r) => ({
+  id: r.readingId,
+  ts: new Date(r.timestamp).getTime(),
+  date: fD(r.timestamp),
+  time: fT(r.timestamp),
+  heartRate: r.heartRate,
+  spo2: r.spo2,
+  temperature: r.temperature,
+  systolicBP: r.systolicBP,
+  diastolicBP: r.diastolicBP
+});
 
-<input type="number" id="heart" placeholder="Heart Rate" required>
+const mapAlert = (a) => ({
+  id: a.alertId,
+  type: a.message,
+  sev: a.severity,
+  val: a.value,
+  ts: new Date(a.timestamp).getTime(),
+  status: a.status,
+  message: a.message,
+  reading: { id: a.readingId }
+});
 
-<input type="number" id="chol" placeholder="Cholesterol Level" required>
+function expCSV(data,fn){
+  if(!data.length)return;
+  const h=Object.keys(data[0]);
+  const csv=[h.join(','),...data.map(r=>h.map(k=>'"'+(r[k]??'')+'"').join(','))].join('\n');
+  const b=new Blob([csv],{type:'text/csv'});const u=URL.createObjectURL(b);
+  const a=document.createElement('a');a.href=u;a.download=fn;a.click();URL.revokeObjectURL(u);
+}
 
-<button type="submit">Check Result</button>
+const KB=[
+  {kw:['spo2','oxygen','saturation'],ans:'SpO2 (Peripheral Capillary Oxygen Saturation) measures the percentage of hemoglobin binding sites occupied by oxygen. Normal values are 95-100%. Below 95% may indicate hypoxemia; below 90% is clinically significant. Measured non-invasively via pulse oximeter, typically on a fingertip.'},
+  {kw:['heart rate','heartbeat','pulse','bpm'],ans:'Heart rate is beats per minute. Normal resting HR for adults: 60-100 BPM. Athletes may have 40-60 BPM. Tachycardia is >100 BPM at rest; bradycardia is <60 BPM. Factors include age, fitness, temperature, emotions, and medications.'},
+  {kw:['blood pressure','bp','hypertension','systolic','diastolic'],ans:'Blood pressure is force of blood on artery walls — systolic/diastolic. Normal: <120/80. Elevated: 120-129/<80. Stage 1 HTN: 130-139/80-89. Stage 2 HTN: ≥140/≥90. Crisis: >180/>120. Often symptomless — called the "silent killer."'},
+  {kw:['temperature','fever','hypothermia','celsius'],ans:'Normal body temperature: 36.5-37.5°C (97.7-99.5°F). Fever >38°C (100.4°F). Hyperthermia >40°C is emergency. Hypothermia <35°C requires emergency care. Temperature varies by time of day — lowest early morning, highest late afternoon.'},
+  {kw:['risk','score','analysis'],ans:'Health risk assessment evaluates multiple vitals against normal ranges. Our rule-based algorithm scores deviations 0-100. Levels: NORMAL (0-20), MONITOR (21-40), ATTENTION (41-60), HIGH RISK (61-100). This is educational only — not a medical diagnosis.'},
+  {kw:['monitoring','vitals','track'],ans:'Continuous monitoring tracks physiological parameters in real-time, enabling early detection of abnormalities. Key vitals: heart rate, SpO2, temperature, blood pressure. Modern systems alert when readings exceed thresholds for timely intervention.'},
+  {kw:['ecg','ekg'],ans:'An ECG records heart electrical activity. It detects arrhythmias, myocardial infarction, heart block. Standard 12-lead ECG provides 12 views. Key components: P wave (atrial depolarization), QRS complex (ventricular depolarization), T wave (ventricular repolarization).'},
+  {kw:['alert','notification','abnormal','warning'],ans:'Alerts trigger when vitals exceed thresholds. Severity: Warning (mild deviation) and Critical (significant deviation, immediate attention). Thresholds: HR>100, SpO2<95%, Temp>37.5°C, BP>140/90. Alerts enable proactive health management.'}
+];
 
-</form>
+function chatResp(msg){
+  const l=msg.toLowerCase();
+  for(const e of KB)if(e.kw.some(k=>l.includes(k)))return e.ans;
+  if(l.match(/hello|hi|hey/))return'Hello! I am your AI Health Information Assistant. Ask me about SpO2, heart rate, blood pressure, temperature, risk assessment, or monitoring concepts!';
+  if(l.includes('thank'))return"You're welcome! Remember, for specific medical concerns, consult a healthcare professional.";
+  if(l.includes('help'))return'I can help with: SpO2, heart rate, blood pressure, temperature, risk assessment, vital sign monitoring, ECG basics, and health alerts. Just ask!';
+  return"I can provide general educational information about health vitals and monitoring. Try asking about SpO2, heart rate, blood pressure, or temperature. Note: I cannot diagnose or prescribe — always consult a healthcare professional.";
+}
 
-<table id="resultTable">
+/* ── CONTEXT ── */
+const Ctx=createContext();
+function Provider({children}){
+  const[page,setPage]=useState('landing');
+  const[auth,setAuth]=useState(()=>{try{return JSON.parse(sessionStorage.getItem('hc_auth'))}catch{return null}});
+  const[profile,setProfile]=useState(null);
+  const[readings,setReadings]=useState([]);
+  const[alerts,setAlerts]=useState([]);
+  const[reports,setReports]=useState([]);
+  const[loading,setLoading]=useState(false);
+  const[toasts,setToasts]=useState([]);
+  const[dark,setDark]=useState(false);
+  const[sidebar,setSidebar]=useState(true);
+  const[notifs,setNotifs]=useState(true);
 
-<tr>
-<th>Name</th>
-<th>Gender</th>
-<th>Height</th>
-<th>Weight</th>
-<th>Blood Pressure</th>
-<th>Heart Rate</th>
-<th>Cholesterol</th>
-<th>Health Status</th>
-</tr>
+  const toast=useCallback((m,t='info')=>{const id=Date.now()+Math.random();setToasts(p=>[...p,{id,m,t}]);setTimeout(()=>setToasts(p=>p.filter(x=>x.id!==id)),3500)},[]);
+  const nav=useCallback(p=>{setPage(p);window.scrollTo(0,0)},[]);
 
-</table>
+  const refreshAll=useCallback(async()=>{
+    if(!auth?.userId)return;
+    setLoading(true);
+    try{
+      const[p,r,a,reps]=await Promise.all([
+        api.getProfile({userId:auth.userId}),
+        api.getHealthReadings({userId:auth.userId}),
+        api.getAlerts({userId:auth.userId}),
+        api.getReports({userId:auth.userId})
+      ]);
+      setProfile(p.data);
+      setReadings((r.data||[]).map(mapReading));
+      setAlerts((a.data||[]).map(mapAlert));
+      setReports(reps.data||[]);
+    }catch(e){toast(e.message,'error')}
+    setLoading(false);
+  },[auth,toast]);
 
-<script src="Script.js"></script>
+  useEffect(()=>{
+    if(auth?.userId){refreshAll()}
+    else{setProfile(null);setReadings([]);setAlerts([]);setReports([])}
+  },[auth,refreshAll]);
 
+  const login=useCallback(async(email,password)=>{
+    setLoading(true);
+    try{
+      const res=await api.login({email,password});
+      sessionStorage.setItem('hc_auth',JSON.stringify(res.data));
+      setAuth(res.data);
+      nav('dashboard');
+      toast('Welcome back!','success');
+    }catch(e){toast(e.message,'error')}
+    setLoading(false);
+  },[nav,toast]);
+
+  const logout=useCallback(()=>{
+    sessionStorage.removeItem('hc_auth');
+    setAuth(null);
+    nav('landing');
+    toast('Logged out','info');
+  },[nav,toast]);
+
+  const resolveAlert=async(id)=>{
+    try{await api.resolveAlert({userId:auth.userId,alertId:id});setAlerts(p=>p.map(a=>a.id===id?{...a,status:'resolved'}:a));toast('Alert resolved','success')}catch(e){toast(e.message,'error')}
+  };
+  const delAlert=async(id)=>{
+    try{await api.deleteAlert({userId:auth.userId,alertId:id});setAlerts(p=>p.filter(a=>a.id!==id));toast('Alert archived','info')}catch(e){toast(e.message,'error')}
+  };
+
+  const val={page,nav,auth,login,logout,profile,setProfile,readings,setReadings,alerts,setAlerts,reports,setReports,loading,setLoading,toasts,toast,dark,setDark,sidebar,setSidebar,notifs,setNotifs,refreshAll,resolveAlert,delAlert};
+  return React.createElement(Ctx.Provider,{value:val},children);
+}
+
+/* ── ICON ── */
+function Ic({name,s=20,cn=''}){
+  const P={
+    home:<><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>,
+    activity:<><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></>,
+    brain:<><path d="M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/><line x1="10" y1="22" x2="14" y2="22"/></>,
+    trendingUp:<><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>,
+    trendingDown:<><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></>,
+    bell:<><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></>,
+    clock:<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
+    messageCircle:<><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></>,
+    fileText:<><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></>,
+    user:<><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
+    settings:<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></>,
+    heart:<><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></>,
+    thermometer:<><path d="M14 14.76V3.5a2.5 2.5 0 00-5 0v11.26a4.5 4.5 0 105 0z"/></>,
+    droplets:<><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></>,
+    search:<><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>,
+    alertTriangle:<><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
+    check:<><polyline points="20 6 9 17 4 12"/></>,
+    x:<><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
+    menu:<><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></>,
+    chevronDown:<><polyline points="6 9 12 15 18 9"/></>,
+    download:<><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>,
+    printer:<><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></>,
+    send:<><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></>,
+    shield:<><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></>,
+    logOut:<><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>,
+    edit:<><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></>,
+    save:<><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></>,
+    trash:<><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></>,
+    eye:<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>,
+    filter:<><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></>,
+    play:<><polygon points="5 3 19 12 5 21 5 3"/></>,
+    pause:<><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></>,
+    square:<><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></>,
+    moon:<><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></>,
+    sun:<><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></>,
+    zap:<><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></>,
+    info:<><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></>,
+    arrowRight:<><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></>,
+    plus:<><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
+    wifi:<><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></>,
+  };
+  return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={cn}>{P[name]||<circle cx="12" cy="12" r="10"/>}</svg>;
+}
+
+/* ── CHART ── */
+function Ch({type='line',data,options,h=200}){
+  const ref=useRef(null),ch=useRef(null);
+  useEffect(()=>{
+    if(!ref.current)return;
+    if(ch.current)ch.current.destroy();
+    ch.current=new Chart(ref.current,{type,data,options:{...options,responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},...(options?.plugins||{})}}});
+    return()=>{if(ch.current){ch.current.destroy();ch.current=null}};
+  },[type,JSON.stringify(data),JSON.stringify(options)]);
+  return <div style={{height:h}}><canvas ref={ref}/></div>;
+}
+
+/* ── CIRCULAR PROGRESS ── */
+function Circ({val,sz=130,sw=10,col='#0d9488',lbl=''}){
+  const r=(sz-sw)/2,c=r*2*Math.PI,o=c-(Math.min(100,Math.max(0,val))/100)*c;
+  return <svg width={sz} height={sz} className="block mx-auto"><circle cx={sz/2} cy={sz/2} r={r} fill="none" stroke="#e2e8f0" strokeWidth={sw}/><circle cx={sz/2} cy={sz/2} r={r} fill="none" stroke={col} strokeWidth={sw} strokeDasharray={c} strokeDashoffset={o} strokeLinecap="round" transform={`rotate(-90 ${sz/2} ${sz/2})`} style={{transition:'stroke-dashoffset 1s ease'}}/><text x={sz/2} y={sz/2-6} textAnchor="middle" dominantBaseline="central" fontSize="28" fontWeight="800" fill={col}>{val}</text>{lbl&&<text x={sz/2} y={sz/2+16} textAnchor="middle" dominantBaseline="central" fontSize="11" fontWeight="500" fill="#64748b">{lbl}</text>}</svg>;
+}
+
+/* ── EMPTY STATE ── */
+function EmptyState({icon,title,desc,btnLabel,btnAction}){
+  return <div className="bg-white rounded-2xl p-12 shadow-sm border border-slate-100 text-center anim-fade">
+    <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center mx-auto mb-4">
+      <Ic name={icon||'activity'} s={32} cn="text-slate-300"/>
+    </div>
+    <h3 className="text-lg font-bold text-slate-900 mb-1">{title||'No Data Available'}</h3>
+    <p className="text-sm text-slate-500 mb-6 max-w-sm mx-auto">{desc||'Start monitoring to see your health data here.'}</p>
+    {btnLabel&&<button onClick={btnAction} className="px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl text-sm flex items-center gap-2 mx-auto transition"><Ic name="play" s={16}/>{btnLabel}</button>}
+  </div>;
+}
+
+/* ── TOAST ── */
+function Toasts(){
+  const{toasts}=useContext(Ctx);
+  const cls={success:'bg-emerald-500',error:'bg-red-500',warning:'bg-amber-500',info:'bg-primary-600'};
+  return <div className="fixed top-4 right-4 z-[100] space-y-2 max-w-sm">{toasts.map(t=><div key={t.id} className={`anim-toast flex items-center gap-3 px-4 py-3 rounded-xl text-white shadow-lg ${cls[t.t]||cls.info}`}><Ic name="check" s={16}/><span className="text-sm font-medium">{t.m}</span></div>)}</div>;
+}
+
+/* ── SIDEBAR ── */
+function Sidebar(){
+  const{page,nav,sidebar,setSidebar,logout,alerts,profile}=useContext(Ctx);
+  const ac=alerts.filter(a=>a.status==='active').length;
+  return <>{sidebar&&<div className="lg:hidden fixed inset-0 bg-black/30 z-40" onClick={()=>setSidebar(false)}/>}<aside className={`fixed lg:sticky top-0 left-0 z-50 h-screen w-64 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 ${sidebar?'translate-x-0':'-translate-x-full lg:translate-x-0'}`}>
+    <div className="p-5 flex items-center gap-3 border-b border-slate-100"><div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center"><Ic name="heart" s={18} cn="text-white"/></div><div><span className="font-bold text-base text-slate-900">AI HealthCare</span><span className="block text-[10px] text-primary-600 font-medium tracking-wider uppercase">Monitoring</span></div></div>
+    <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1 sb">{NAV.map(n=><button key={n.id} onClick={()=>{nav(n.id);if(window.innerWidth<1024)setSidebar(false)}} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${page===n.id?'bg-primary-50 text-primary-700 shadow-sm':'text-slate-600 hover:bg-slate-50'}`}><Ic name={n.icon} s={18} cn={page===n.id?'text-primary-600':'text-slate-400'}/>{n.label}{n.id==='alerts'&&ac>0&&<span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{ac}</span>}</button>)}</nav>
+    <div className="p-3 border-t border-slate-100"><div className="flex items-center gap-2 mb-2 px-3"><div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">{profile?.name?.[0]||'U'}</div><div className="text-xs overflow-hidden"><p className="font-medium text-slate-700 truncate">{profile?.name||'User'}</p><p className="text-slate-400 truncate">{profile?.email||''}</p></div></div><button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-red-50 hover:text-red-600 transition-all"><Ic name="logOut" s={18} cn="text-slate-400"/>Logout</button></div>
+  </aside></>;
+}
+
+/* ── HEADER ── */
+function Header(){
+  const{page,profile,sidebar,setSidebar}=useContext(Ctx);
+  const titles={dashboard:'Dashboard',monitoring:'Live Monitoring',analysis:'AI Risk Analysis',trends:'Health Trends',alerts:'Alerts',history:'Health History',assistant:'AI Assistant',reports:'Reports',profile:'Profile',settings:'Settings'};
+  return <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200/60 px-4 lg:px-6 py-3 flex items-center justify-between no-print">
+    <div className="flex items-center gap-3"><button onClick={()=>setSidebar(!sidebar)} className="lg:hidden p-2 rounded-lg hover:bg-slate-100 text-slate-600"><Ic name="menu" s={20}/></button><div><h1 className="text-lg font-bold text-slate-900">{titles[page]||'Dashboard'}</h1><p className="text-xs text-slate-500 hidden sm:block">Welcome, {profile?.name?.split(' ')[0]||'User'}</p></div></div>
+    <div className="flex items-center gap-2"><div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium"><span className="w-2 h-2 rounded-full bg-emerald-500 pulse-live"/>Active</div><button className="relative p-2 rounded-lg hover:bg-slate-100 text-slate-500"><Ic name="bell" s={20}/></button><div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white text-sm font-bold">{profile?.name?.[0]||'U'}</div></div>
+  </header>;
+}
+
+/* ── VITAL CARD ── */
+function VCard({icon,color,bg,label,value,unit,status,trend,lastUp,delay=0}){
+  return <div className={`anim-up d${delay+1} bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-all`}>
+    <div className="flex items-start justify-between mb-3"><div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center`}><Ic name={icon} s={20} cn={color}/></div><span className={`text-[10px] font-semibold px-2 py-1 rounded-full ${status==='normal'?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-700'}`}>{status==='normal'?'Normal':'Abnormal'}</span></div>
+    <p className="text-xs text-slate-500 font-medium mb-1">{label}</p>
+    <div className="flex items-end gap-1.5"><span className="text-2xl font-bold text-slate-900">{value}</span><span className="text-sm text-slate-500 mb-0.5">{unit}</span></div>
+    <div className="mt-2 flex items-center justify-between"><span className={`text-xs font-medium flex items-center gap-1 ${trend>0?'text-red-500':'text-emerald-500'}`}><Ic name={trend>0?"trendingUp":"trendingDown"} s={12}/>{trend>0?'+':''}{trend}%</span><span className="text-[10px] text-slate-400">{lastUp}</span></div>
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════
+   PAGE: LANDING
+   ════════════════════════════════════════════════════════ */
+function LandingPage(){
+  const{nav}=useContext(Ctx);
+  const feats=[
+    {icon:'heart',color:'text-red-500',bg:'bg-red-50',t:'Vital Signs Monitoring',d:'Real-time tracking of heart rate, SpO2, temperature, and blood pressure with abnormality detection.'},
+    {icon:'brain',color:'text-primary-600',bg:'bg-primary-50',t:'AI Risk Analysis',d:'Rule-based health risk scoring engine designed for educational demonstration and future ML integration.'},
+    {icon:'trendingUp',color:'text-emerald-600',bg:'bg-emerald-50',t:'Trend Visualization',d:'Interactive charts and historical analysis to identify patterns and long-term health trends.'},
+    {icon:'bell',color:'text-amber-600',bg:'bg-amber-50',t:'Smart Alerts',d:'Automatic alert generation when readings exceed normal thresholds with severity classification.'},
+    {icon:'messageCircle',color:'text-blue-600',bg:'bg-blue-50',t:'AI Health Assistant',d:'Educational chatbot answering general health questions about vitals and medical terminology.'},
+    {icon:'shield',color:'text-violet-600',bg:'bg-violet-50',t:'Privacy & Security',d:'Secure backend data storage with strict user isolation. Your health data is protected.'},
+  ];
+  return <div className="min-h-screen bg-white">
+    <nav className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-md border-b border-slate-200/60"><div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between"><div className="flex items-center gap-2.5"><div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center"><Ic name="heart" s={16} cn="text-white"/></div><span className="font-bold text-lg text-slate-900">AI HealthCare</span></div><div className="flex items-center gap-3"><button onClick={()=>nav('login')} className="text-sm font-medium text-slate-700 hover:text-primary-600 px-3 py-2">Login</button><button onClick={()=>nav('register')} className="text-sm font-semibold text-white bg-primary-600 hover:bg-primary-700 px-4 py-2 rounded-xl transition">Register</button></div></div></nav>
+
+    <section className="pt-32 pb-20 px-4 sm:px-6"><div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 items-center"><div className="anim-up"><div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary-50 text-primary-700 text-xs font-semibold mb-6"><span className="w-1.5 h-1.5 rounded-full bg-primary-500 pulse-live"/>AI-Powered Health Monitoring</div><h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-slate-900 leading-tight mb-6">Smart Healthcare<br/>Monitoring with <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-emerald-500">AI</span></h1><p className="text-lg text-slate-600 mb-8 max-w-lg leading-relaxed">An intelligent health monitoring system that tracks vital signs, detects anomalies, calculates risk scores, and provides AI-powered health insights — all in real-time.</p><div className="flex flex-wrap gap-4"><button onClick={()=>nav('register')} className="px-6 py-3.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl shadow-lg shadow-primary-600/25 transition-all flex items-center gap-2">Get Started <Ic name="arrowRight" s={18}/></button><button onClick={()=>nav('login')} className="px-6 py-3.5 bg-white border-2 border-slate-200 hover:border-primary-300 text-slate-700 font-semibold rounded-xl transition-all">View Dashboard</button></div></div><div className="anim-up d2"><div className="bg-gradient-to-br from-primary-50 to-emerald-50 rounded-3xl p-8 border border-primary-100"><div className="grid grid-cols-2 gap-4">{[{icon:'heart',l:'Heart Rate',v:'72',u:'BPM',c:'text-red-500'},{icon:'droplets',l:'SpO2',v:'98',u:'%',c:'text-blue-500'},{icon:'thermometer',l:'Temperature',v:'36.8',u:'°C',c:'text-amber-500'},{icon:'activity',l:'Blood Pressure',v:'120/80',u:'mmHg',c:'text-primary-600'}].map((v,i)=><div key={i} className="bg-white rounded-2xl p-4 shadow-sm anim-bounce" style={{animationDelay:i*.1+'s'}}><div className="flex items-center gap-2 mb-2"><Ic name={v.icon} s={16} cn={v.c}/><span className="text-xs text-slate-500 font-medium">{v.l}</span></div><div className="flex items-end gap-1"><span className="text-xl font-bold text-slate-900">{v.v}</span><span className="text-xs text-slate-400">{v.u}</span></div></div>)}</div><div className="mt-4 text-center text-[10px] text-slate-400 font-medium">Sample Preview Only</div></div></div></div></section>
+
+    <section className="py-20 px-4 sm:px-6 bg-slate-50"><div className="max-w-7xl mx-auto"><div className="text-center mb-14"><span className="text-primary-600 text-sm font-semibold uppercase tracking-wider">Features</span><h2 className="text-3xl sm:text-4xl font-black text-slate-900 mt-2">Comprehensive Health Monitoring</h2></div><div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">{feats.map((f,i)=><div key={i} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 hover:shadow-lg hover:-translate-y-1 transition-all anim-up" style={{animationDelay:i*.07+'s'}}><div className={`w-12 h-12 rounded-xl ${f.bg} flex items-center justify-center mb-4`}><Ic name={f.icon} s={22} cn={f.color}/></div><h3 className="text-lg font-bold text-slate-900 mb-2">{f.t}</h3><p className="text-sm text-slate-500 leading-relaxed">{f.d}</p></div>)}</div></div></section>
+
+    <section className="py-20 px-4 sm:px-6 bg-amber-50 border-y border-amber-200"><div className="max-w-4xl mx-auto flex items-start gap-4"><Ic name="alertTriangle" s={24} cn="text-amber-600 flex-shrink-0 mt-0.5"/><div><h3 className="font-bold text-amber-900 mb-1">Medical Disclaimer</h3><p className="text-sm text-amber-800 leading-relaxed">This application is for educational and monitoring purposes only and is not a medical diagnosis system. The risk scores are generated by an educational rule-based algorithm. Always consult a qualified healthcare professional for medical advice.</p></div></div></section>
+
+    <footer className="py-10 px-4 sm:px-6 bg-slate-900 text-slate-400"><div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4"><div className="flex items-center gap-2"><div className="w-7 h-7 rounded-lg bg-primary-600 flex items-center justify-center"><Ic name="heart" s={14} cn="text-white"/></div><span className="font-bold text-white">AI HealthCare</span></div><p className="text-xs">B.Tech CSE (AI/ML) Project | Educational Purpose Only</p><p className="text-xs">Simulated Data | No Real Patient Information</p></div></footer>
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════
+   PAGE: LOGIN
+   ════════════════════════════════════════════════════════ */
+function LoginPage(){
+  const{nav,login,loading}=useContext(Ctx);
+  const[email,setEmail]=useState('');const[pass,setPass]=useState('');
+  const submit=async e=>{e.preventDefault();if(!email||!pass){toast('Please fill in all fields','warning');return;}await login(email,pass)};
+  return <div className="min-h-screen bg-gradient-to-br from-slate-50 to-primary-50 flex items-center justify-center p-4"><div className="w-full max-w-md">
+    <div className="text-center mb-8 anim-up"><div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center mx-auto mb-4"><Ic name="heart" s={24} cn="text-white"/></div><h1 className="text-2xl font-black text-slate-900">Welcome Back</h1><p className="text-sm text-slate-500 mt-1">Sign in to your health monitoring dashboard</p></div>
+    <div className="bg-white rounded-2xl shadow-xl border border-slate-100 p-8 anim-up d2"><form onSubmit={submit} className="space-y-4">
+      <div><label className="text-xs font-semibold text-slate-700 mb-1 block">Email Address</label><input type="email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none" placeholder="you@example.com"/></div>
+      <div><label className="text-xs font-semibold text-slate-700 mb-1 block">Password</label><input type="password" value={pass} onChange={e=>setPass(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none" placeholder="Enter password"/></div>
+      <button type="submit" disabled={loading} className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50">{loading?<div className="spinner"/>:'Sign In'}</button>
+    </form></div>
+    <p className="text-center text-sm text-slate-500 mt-6">No account? <button onClick={()=>nav('register')} className="text-primary-600 font-semibold">Register</button></p>
+  </div></div>;
+}
+
+/* ════════════════════════════════════════════════════════
+   PAGE: REGISTER
+   ════════════════════════════════════════════════════════ */
+function RegisterPage(){
+  const{nav,toast}=useContext(Ctx);
+  const[f,setF]=useState({name:'',email:'',password:'',age:'',gender:'',contact:'',emergency:''});const[ld,setLd]=useState(false);
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const submit=async e=>{
+    e.preventDefault();
+    if(!f.name||!f.email||!f.password||!f.age||!f.gender){toast('Please fill required fields','warning');return;}
+    setLd(true);
+    try{
+      await api.register(f);
+      toast('Account created successfully! Please sign in.','success');
+      nav('login');
+    }catch(err){toast(err.message,'error');}
+    setLd(false);
+  };
+  return <div className="min-h-screen bg-gradient-to-br from-slate-50 to-primary-50 flex items-center justify-center p-4"><div className="w-full max-w-md">
+    <div className="text-center mb-6 anim-up"><div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center mx-auto mb-4"><Ic name="heart" s={24} cn="text-white"/></div><h1 className="text-2xl font-black text-slate-900">Create Account</h1></div>
+    <div className="bg-white rounded-2xl shadow-xl border border-slate-100 p-8 anim-up d2"><form onSubmit={submit} className="space-y-3">
+      <div><label className="text-xs font-semibold text-slate-700 mb-1 block">Full Name *</label><input type="text" value={f.name} onChange={e=>set('name',e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none"/></div>
+      <div><label className="text-xs font-semibold text-slate-700 mb-1 block">Email *</label><input type="email" value={f.email} onChange={e=>set('email',e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none"/></div>
+      <div><label className="text-xs font-semibold text-slate-700 mb-1 block">Password *</label><input type="password" value={f.password} onChange={e=>set('password',e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none"/></div>
+      <div className="grid grid-cols-2 gap-3"><div><label className="text-xs font-semibold text-slate-700 mb-1 block">Age *</label><input type="number" value={f.age} onChange={e=>set('age',e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none"/></div><div><label className="text-xs font-semibold text-slate-700 mb-1 block">Gender *</label><select value={f.gender} onChange={e=>set('gender',e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none bg-white"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select></div></div>
+      <div><label className="text-xs font-semibold text-slate-700 mb-1 block">Contact</label><input type="tel" value={f.contact} onChange={e=>set('contact',e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none"/></div>
+      <div><label className="text-xs font-semibold text-slate-700 mb-1 block">Emergency Contact</label><input type="tel" value={f.emergency} onChange={e=>set('emergency',e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none"/></div>
+      <button type="submit" disabled={ld} className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 mt-2">{ld?<div className="spinner"/>:'Create Account'}</button>
+    </form></div>
+    <p className="text-center text-sm text-slate-500 mt-6">Have an account? <button onClick={()=>nav('login')} className="text-primary-600 font-semibold">Sign In</button></p>
+  </div></div>;
+}
+
+/* ════════════════════════════════════════════════════════
+   PAGE: PROFILE SETUP (First-time)
+   ════════════════════════════════════════════════════════ */
+function ProfileSetupPage(){
+  const{auth,refreshAll,toast}=useContext(Ctx);
+  const[f,setF]=useState({name:auth?.name||'',age:'',gender:'',contact:'',emergency:'',blood:'',height:'',weight:''});
+  const[ld,setLd]=useState(false);
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const submit=async e=>{
+    e.preventDefault();
+    if(!f.name||!f.age||!f.gender||!f.blood||!f.height||!f.weight){toast('Please fill all required fields','warning');return;}
+    setLd(true);
+    try{
+      await api.updateProfile({
+        userId:auth.userId, name:f.name, age:f.age, gender:f.gender, contact:f.contact,
+        emergencyContact:f.emergency, bloodGroup:f.blood, height:f.height, weight:f.weight
+      });
+      toast('Profile saved successfully!','success');
+      refreshAll();
+    }catch(err){toast(err.message,'error');}
+    setLd(false);
+  };
+  return <div className="min-h-screen bg-gradient-to-br from-slate-50 to-primary-50 flex items-center justify-center p-4"><div className="w-full max-w-md">
+    <div className="text-center mb-6 anim-up"><div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center mx-auto mb-4"><Ic name="user" s={24} cn="text-white"/></div><h1 className="text-2xl font-black text-slate-900">Complete Your Profile</h1><p className="text-sm text-slate-500 mt-1">This helps personalize your health monitoring experience.</p></div>
+    <div className="bg-white rounded-2xl shadow-xl border border-slate-100 p-8 anim-up d2"><form onSubmit={submit} className="space-y-3">
+      <div><label className="text-xs font-semibold text-slate-700 mb-1 block">Full Name *</label><input type="text" value={f.name} onChange={e=>set('name',e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none"/></div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className="text-xs font-semibold text-slate-700 mb-1 block">Age *</label><input type="number" value={f.age} onChange={e=>set('age',e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none"/></div>
+        <div><label className="text-xs font-semibold text-slate-700 mb-1 block">Gender *</label><select value={f.gender} onChange={e=>set('gender',e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none bg-white"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select></div>
+        <div><label className="text-xs font-semibold text-slate-700 mb-1 block">Blood Group *</label><select value={f.blood} onChange={e=>set('blood',e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none bg-white"><option value="">Select</option>{['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(b=><option key={b}>{b}</option>)}</select></div>
+        <div><label className="text-xs font-semibold text-slate-700 mb-1 block">Height (cm) *</label><input type="number" value={f.height} onChange={e=>set('height',e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none"/></div>
+        <div><label className="text-xs font-semibold text-slate-700 mb-1 block">Weight (kg) *</label><input type="number" value={f.weight} onChange={e=>set('weight',e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none"/></div>
+        <div><label className="text-xs font-semibold text-slate-700 mb-1 block">Contact</label><input type="tel" value={f.contact} onChange={e=>set('contact',e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none"/></div>
+        <div><label className="text-xs font-semibold text-slate-700 mb-1 block">Emergency Contact</label><input type="tel" value={f.emergency} onChange={e=>set('emergency',e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none"/></div>
+      </div>
+      <button type="submit" disabled={ld} className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 mt-2">{ld?<div className="spinner"/>:'Save Profile'}</button>
+    </form></div>
+  </div></div>;
+}
+
+/* ════════════════════════════════════════════════════════
+   PAGE: DASHBOARD
+   ════════════════════════════════════════════════════════ */
+function DashboardPage(){
+  const{readings,alerts,nav,profile}=useContext(Ctx);
+  if(readings.length===0){
+    return <EmptyState icon="activity" title="No Health Data Available Yet" desc="Start monitoring or add your health readings to begin analysis." btnLabel="Start Monitoring" btnAction={()=>nav('monitoring')} />;
+  }
+  const cv=readings[0];
+  const risk=calcRisk({...cv,age:parseInt(profile?.age||25)});
+  const aa=alerts.filter(a=>a.status==='active').slice(0,3);
+  const rh=readings.slice(0,5);
+  const lu=readings.length?fT(cv.ts):'Now';
+  const hs=Math.max(0,100-risk.score);
+  return <div className="space-y-6 anim-fade">
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <VCard icon="heart" color="text-red-500" bg="bg-red-50" label="Heart Rate" value={cv.heartRate} unit="BPM" status={gStat('heartRate',cv.heartRate)} trend={Math.round((Math.random()-.5)*8)} lastUp={lu} delay={0}/>
+      <VCard icon="droplets" color="text-blue-500" bg="bg-blue-50" label="SpO2" value={cv.spo2} unit="%" status={gStat('spo2',cv.spo2)} trend={Math.round((Math.random()-.5)*3)} lastUp={lu} delay={1}/>
+      <VCard icon="thermometer" color="text-amber-500" bg="bg-amber-50" label="Temperature" value={cv.temperature} unit="°C" status={gStat('temperature',cv.temperature)} trend={Math.round((Math.random()-.5)*4)} lastUp={lu} delay={2}/>
+      <VCard icon="activity" color="text-primary-600" bg="bg-primary-50" label="Blood Pressure" value={cv.systolicBP+'/'+cv.diastolicBP} unit="mmHg" status={gStat('systolicBP',cv.systolicBP)} trend={Math.round((Math.random()-.5)*6)} lastUp={lu} delay={3}/>
+    </div>
+    <div className="grid lg:grid-cols-3 gap-4">
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100"><h3 className="text-sm font-bold text-slate-900 mb-4">Health Score</h3><Circ val={hs} col={risk.color} lbl={risk.level}/><div className="mt-4 text-center"><p className="text-xs text-slate-500">Risk Score: <span className="font-bold" style={{color:risk.color}}>{risk.score}/100</span></p></div></div>
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100"><h3 className="text-sm font-bold text-slate-900 mb-4">Overall Status</h3><div className="flex items-center gap-3 mb-4"><div className={`w-3 h-3 rounded-full ${hs>=80?'bg-emerald-500':hs>=60?'bg-amber-500':'bg-red-500'} pulse-live`}/><span className={`text-lg font-bold ${hs>=80?'text-emerald-700':hs>=60?'text-amber-700':'text-red-700'}`}>{hs>=80?'Good':hs>=60?'Fair':'Needs Attention'}</span></div><div className="space-y-3">{[{l:'Heart Rate',v:cv.heartRate+' BPM',ok:gStat('heartRate',cv.heartRate)==='normal'},{l:'SpO2',v:cv.spo2+'%',ok:gStat('spo2',cv.spo2)==='normal'},{l:'Temperature',v:cv.temperature+'°C',ok:gStat('temperature',cv.temperature)==='normal'},{l:'Blood Pressure',v:cv.systolicBP+'/'+cv.diastolicBP,ok:gStat('systolicBP',cv.systolicBP)==='normal'}].map((s,i)=><div key={i} className="flex items-center justify-between"><span className="text-xs text-slate-500">{s.l}</span><div className="flex items-center gap-2"><span className="text-xs font-semibold text-slate-700">{s.v}</span><span className={`w-2 h-2 rounded-full ${s.ok?'bg-emerald-500':'bg-red-500'}`}/></div></div>)}</div><button onClick={()=>nav('monitoring')} className="mt-4 w-full py-2 bg-primary-50 hover:bg-primary-100 text-primary-700 font-semibold rounded-xl text-sm transition flex items-center justify-center gap-2"><Ic name="activity" s={14}/>Start Monitoring</button></div>
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100"><div className="flex items-center justify-between mb-4"><h3 className="text-sm font-bold text-slate-900">Recent Alerts</h3><button onClick={()=>nav('alerts')} className="text-xs text-primary-600 font-medium">View All</button></div>{aa.length?aa.map(a=><div key={a.id} className={`flex items-start gap-3 p-3 rounded-xl mb-2 ${a.sev==='critical'?'bg-red-50':'bg-amber-50'}`}><Ic name="alertTriangle" s={16} cn={a.sev==='critical'?'text-red-500':'text-amber-500'}/><div><p className="text-xs font-semibold text-slate-900">{a.type}</p><p className="text-[10px] text-slate-500">{a.val} | {fDT(a.ts)}</p></div></div>):<p className="text-sm text-slate-400 text-center py-8">No active alerts</p>}</div>
+    </div>
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100"><div className="flex items-center justify-between mb-4"><h3 className="text-sm font-bold text-slate-900">Recent Measurements</h3><button onClick={()=>nav('history')} className="text-xs text-primary-600 font-medium">View All</button></div><div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="text-slate-500 border-b border-slate-100"><th className="py-2 text-left font-semibold">Time</th><th className="py-2 text-right font-semibold">HR</th><th className="py-2 text-right font-semibold">SpO2</th><th className="py-2 text-right font-semibold">Temp</th><th className="py-2 text-right font-semibold">BP</th></tr></thead><tbody>{rh.map((h,i)=><tr key={i} className="border-b border-slate-50"><td className="py-2 text-slate-600">{h.time}</td><td className={`py-2 text-right font-semibold ${h.heartRate>100?'text-red-600':'text-slate-700'}`}>{h.heartRate}</td><td className={`py-2 text-right font-semibold ${h.spo2<95?'text-red-600':'text-slate-700'}`}>{h.spo2}%</td><td className={`py-2 text-right font-semibold ${h.temperature>37.5?'text-red-600':'text-slate-700'}`}>{h.temperature}°C</td><td className="py-2 text-right font-semibold text-slate-700">{h.systolicBP}/{h.diastolicBP}</td></tr>)}</tbody></table></div></div>
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════
+   PAGE: LIVE MONITORING
+   ════════════════════════════════════════════════════════ */
+function LiveMonitoringPage(){
+  const{auth,toast,readings,setReadings,alerts,setAlerts,refreshAll}=useContext(Ctx);
+  const[mon,setMon]=useState(false);const[pau,setPau]=useState(false);
+  const[v,setV]=useState({heartRate:0,spo2:0,temperature:0,systolicBP:0,diastolicBP:0});
+  const[hrD,setHrD]=useState([]);const[abn,setAbn]=useState(null);
+  const iRef=useRef(null);
+
+  const generateAndSave=async()=>{
+    const reading=simRead();
+    setV(reading);
+    setHrD(d=>[...d.slice(-29),{x:fT(Date.now()),y:reading.heartRate}]);
+    const msgs=[];
+    if(reading.heartRate>100)msgs.push('High HR');
+    if(reading.spo2<95)msgs.push('Low SpO2');
+    if(reading.temperature>37.8)msgs.push('High Temp');
+    if(reading.systolicBP>140)msgs.push('High BP');
+    setAbn(msgs.length?msgs.join(', '):null);
+    
+    try{
+      const res=await api.addHealthReading({userId:auth.userId,...reading});
+      const newReading=mapReading(res.data.reading);
+      setReadings(prev=>[newReading,...prev]);
+      if(res.data.alerts&&res.data.alerts.length>0){
+        const newAlerts=res.data.alerts.map(mapAlert);
+        setAlerts(prev=>[...newAlerts,...prev]);
+        newAlerts.forEach(a=>toast(a.message,a.severity==='critical'?'error':'warning'));
+      }
+    }catch(err){toast('Failed to save reading: '+err.message,'error');}
+  };
+
+  useEffect(()=>{
+    if(mon&&!pau){
+      generateAndSave();
+      iRef.current=setInterval(generateAndSave,4000);
+    }else{
+      clearInterval(iRef.current);
+    }
+    return()=>clearInterval(iRef.current);
+  },[mon,pau]);
+
+  const stop=()=>{setMon(false);setPau(false);toast('Monitoring stopped. Data saved to history.','info');refreshAll();};
+  
+  const mkC=(d,l,c,yMin,yMax)=>({type:'line',data:{labels:d.map(x=>x.x),datasets:[{label:l,data:d.map(x=>x.y),borderColor:c,backgroundColor:c+'20',borderWidth:2,fill:true,tension:.4,pointRadius:0}]},options:{scales:{y:{min:yMin,max:yMax,grid:{color:'#f1f5f9'},ticks:{font:{size:10}}},x:{display:false}},animation:{duration:0},plugins:{tooltip:{enabled:true}}}});
+  
+  return <div className="space-y-6 anim-fade">
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100"><div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex items-center gap-3">{!mon?<button onClick={()=>{setMon(true);setPau(false);toast('Monitoring started','success')}} className="px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl text-sm flex items-center gap-2 transition"><Ic name="play" s={16}/>Start Monitoring</button>:<>{!pau?<button onClick={()=>{setPau(true);toast('Monitoring paused','warning')}} className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-xl text-sm flex items-center gap-2 transition"><Ic name="pause" s={16}/>Pause</button>:<button onClick={()=>{setPau(false);toast('Monitoring resumed','info')}} className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl text-sm flex items-center gap-2 transition"><Ic name="play" s={16}/>Resume</button>}<button onClick={stop} className="px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl text-sm flex items-center gap-2 transition"><Ic name="square" s={16}/>Stop</button></>}</div>
+      <div className="flex items-center gap-4">{mon&&<div className="flex items-center gap-2"><span className={`w-2.5 h-2.5 rounded-full ${pau?'bg-amber-500':'bg-emerald-500'} ${pau?'':'pulse-live'}`}/><span className="text-xs font-medium text-slate-600">{pau?'Paused':'Live'}</span></div>}</div>
+    </div>{abn&&<div className="mt-4 flex items-center gap-2 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 font-medium anim-fade"><Ic name="alertTriangle" s={16} cn="text-red-500"/>Abnormal: {abn}</div>}<p className="mt-3 text-[10px] text-slate-400 flex items-center gap-1"><Ic name="info" s={12}/>Simulated Sensor Data — Values generated locally for demonstration and saved to your account.</p></div>
+
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">{[{l:'Heart Rate',v:v.heartRate,u:'BPM',s:gStat('heartRate',v.heartRate)},{l:'SpO2',v:v.spo2,u:'%',s:gStat('spo2',v.spo2)},{l:'Temperature',v:v.temperature,u:'°C',s:gStat('temperature',v.temperature)},{l:'Systolic BP',v:v.systolicBP,u:'mmHg',s:gStat('systolicBP',v.systolicBP)},{l:'Diastolic BP',v:v.diastolicBP,u:'mmHg',s:gStat('diastolicBP',v.diastolicBP)}].map((m,i)=><div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100"><p className="text-[10px] text-slate-500 font-medium">{m.l}</p><div className="flex items-end gap-1 mt-1"><span className="text-xl font-bold text-slate-900">{m.v||'--'}</span><span className="text-xs text-slate-400">{m.u}</span></div><span className={`text-[9px] font-semibold ${m.s==='normal'?'text-emerald-600':'text-red-600'}`}>{v.heartRate?m.s:'--'}</span></div>)}</div>
+
+    <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100"><h3 className="text-sm font-bold text-slate-900 mb-3">Heart Rate (BPM)</h3>{hrD.length?<Ch type="line" data={mkC(hrD,'HR','#ef4444',40,180).data} options={mkC(hrD,'HR','#ef4444',40,180).options} h={180}/>:<p className="text-sm text-slate-400 text-center py-12">Start monitoring to see live data</p>}</div>
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════
+   PAGE: AI RISK ANALYSIS
+   ════════════════════════════════════════════════════════ */
+function AnalysisPage(){
+  const{readings,profile,toast,nav}=useContext(Ctx);
+  const cv=readings[0]||{heartRate:0,spo2:0,temperature:0,systolicBP:0,diastolicBP:0};
+  const[f,setF]=useState({age:profile?.age||25,heartRate:cv.heartRate,spo2:cv.spo2,temperature:cv.temperature,systolicBP:cv.systolicBP,diastolicBP:cv.diastolicBP});
+  const[res,setRes]=useState(null);const[ld,setLd]=useState(false);const set=(k,v)=>setF(p=>({...p,[k]:+v}));
+  const run=()=>{setLd(true);setTimeout(()=>{setRes(calcRisk(f));setLd(false);toast('Analysis complete','success')},1500)};
+  const lb={NORMAL:'bg-emerald-50 text-emerald-700 border-emerald-200',MONITOR:'bg-amber-50 text-amber-700 border-amber-200','ATTENTION REQUIRED':'bg-orange-50 text-orange-700 border-orange-200','HIGH RISK':'bg-red-50 text-red-700 border-red-200'};
+  
+  if(readings.length===0){
+    return <EmptyState icon="brain" title="Insufficient Health Data" desc="Start monitoring to collect health readings. AI risk analysis will be available once you have data." btnLabel="Start Monitoring" btnAction={()=>nav('monitoring')} />;
+  }
+  
+  return <div className="space-y-6 anim-fade">
+    <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-2xl p-6 text-white"><h2 className="text-xl font-bold mb-1">AI Health Risk Analysis</h2><p className="text-sm text-primary-100">Enter or use current vitals to calculate an educational health risk score</p></div>
+    <div className="grid lg:grid-cols-2 gap-6">
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100"><h3 className="text-sm font-bold text-slate-900 mb-4">Input Parameters</h3><div className="grid grid-cols-2 gap-4">{[{k:'age',l:'Age',u:'years'},{k:'heartRate',l:'Heart Rate',u:'BPM'},{k:'spo2',l:'SpO2',u:'%'},{k:'temperature',l:'Temperature',u:'°C'},{k:'systolicBP',l:'Systolic BP',u:'mmHg'},{k:'diastolicBP',l:'Diastolic BP',u:'mmHg'}].map(x=><div key={x.k}><label className="text-xs font-semibold text-slate-700 mb-1 block">{x.l}</label><input type="number" step={x.k==='temperature'?.1:1} value={f[x.k]} onChange={e=>set(x.k,e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none"/></div>)}</div><button onClick={run} disabled={ld} className="mt-6 w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50">{ld?<><div className="spinner"/>Analyzing...</>:<><Ic name="brain" s={18}/>Analyze Health Risk</>}</button></div>
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100"><h3 className="text-sm font-bold text-slate-900 mb-4">Analysis Result</h3>{res?<div className="anim-up"><div className="flex items-center justify-center mb-6"><Circ val={res.score} sz={160} sw={14} col={res.color} lbl="Risk Score"/></div><div className={`text-center mb-6 px-4 py-2.5 rounded-xl border ${lb[res.level]||'bg-slate-50 text-slate-700 border-slate-200'}`}><span className="text-sm font-bold">{res.level}</span></div><div className="grid grid-cols-2 gap-4 mb-6"><div className="bg-slate-50 rounded-xl p-3 text-center"><p className="text-[10px] text-slate-500">Confidence</p><p className="text-lg font-bold text-slate-900">{res.conf}%</p></div><div className="bg-slate-50 rounded-xl p-3 text-center"><p className="text-[10px] text-slate-500">Factors</p><p className="text-lg font-bold text-slate-900">{res.factors.length}</p></div></div>{res.factors.length>0&&<div><p className="text-xs font-semibold text-slate-700 mb-2">Contributing Factors</p><div className="space-y-2">{res.factors.map((f,i)=><div key={i} className="flex items-start gap-2 p-2.5 bg-amber-50 rounded-lg"><Ic name="alertTriangle" s={14} cn="text-amber-500 mt-0.5 flex-shrink-0"/><span className="text-xs text-amber-800">{f}</span></div>)}</div></div>}<p className="mt-4 text-[10px] text-slate-400 leading-relaxed">This analysis is for educational purposes only and does not constitute a medical diagnosis.</p></div>:<p className="text-sm text-slate-400 text-center py-16">Enter parameters and click "Analyze Health Risk" to see results</p>}</div>
+    </div>
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════
+   PAGE: HEALTH TRENDS
+   ════════════════════════════════════════════════════════ */
+function TrendsPage(){
+  const{readings,nav}=useContext(Ctx);const[fil,setFil]=useState('7');
+  if(readings.length<2){
+    return <EmptyState icon="trendingUp" title="Not Enough Data" desc="You need at least 2 health readings to visualize trends. Start monitoring to collect data." btnLabel="Start Monitoring" btnAction={()=>nav('monitoring')} />;
+  }
+  const fd=useMemo(()=>{const d=fil==='1'?1:fil==='7'?7:30;const c=Date.now()-d*864e5;return readings.filter(h=>h.ts>=c)},[readings,fil]);
+  const st=useMemo(()=>{if(!fd.length)return{};const c=k=>{const v=fd.map(h=>h[k]);return{avg:+(v.reduce((a,b)=>a+b,0)/v.length).toFixed(1),min:Math.min(...v),max:Math.max(...v),tr:v[v.length-1]-v[0]}};return{heartRate:c('heartRate'),spo2:c('spo2'),temperature:c('temperature'),systolicBP:c('systolicBP')}},[fd]);
+  const mkD=(k)=>{const b={};fd.forEach(h=>{if(!b[h.date])b[h.date]={x:h.date,y:[]};b[h.date].y.push(h[k])});return Object.values(b).map(d=>({x:d.x,y:+(d.y.reduce((a,b)=>a+b,0)/d.y.length).toFixed(1)}))};
+  const mkC=(d,l,c,yMin,yMax)=>({type:'line',data:{labels:d.map(x=>x.x),datasets:[{label:l,data:d.map(x=>x.y),borderColor:c,backgroundColor:c+'20',borderWidth:2,fill:true,tension:.3,pointRadius:2,pointBackgroundColor:c}]},options:{scales:{y:{min:yMin,max:yMax,grid:{color:'#f1f5f9'},ticks:{font:{size:10}}},x:{grid:{display:false},ticks:{font:{size:9},maxRotation:45}}},plugins:{tooltip:{enabled:true},legend:{display:false}}}});
+  return <div className="space-y-6 anim-fade">
+    <div className="flex flex-wrap items-center justify-between gap-4"><h2 className="text-lg font-bold text-slate-900">Health Trends</h2><div className="flex gap-2">{[{k:'1',l:'Today'},{k:'7',l:'7 Days'},{k:'30',l:'30 Days'}].map(f=><button key={f.k} onClick={()=>setFil(f.k)} className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${fil===f.k?'bg-primary-600 text-white':'bg-white border border-slate-200 text-slate-600'}`}>{f.l}</button>)}</div></div>
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{st.heartRate&&[{l:'Heart Rate',s:st.heartRate,u:'BPM'},{l:'SpO2',s:st.spo2,u:'%'},{l:'Temperature',s:st.temperature,u:'°C'},{l:'Systolic BP',s:st.systolicBP,u:'mmHg'}].map((v,i)=><div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100"><p className="text-xs text-slate-500 font-medium mb-2">{v.l}</p><div className="grid grid-cols-3 gap-2 text-center"><div><p className="text-[9px] text-slate-400">Avg</p><p className="text-sm font-bold text-slate-900">{v.s.avg}</p></div><div><p className="text-[9px] text-slate-400">Min</p><p className="text-sm font-bold text-slate-900">{v.s.min}</p></div><div><p className="text-[9px] text-slate-400">Max</p><p className="text-sm font-bold text-slate-900">{v.s.max}</p></div></div><div className="flex items-center justify-center gap-1 mt-2"><Ic name={v.s.tr>0?"trendingUp":"trendingDown"} s={12} cn={v.s.tr>0?'text-red-500':'text-emerald-500'}/><span className={`text-xs font-semibold ${v.s.tr>0?'text-red-500':'text-emerald-500'}`}>{v.s.tr>0?'+':''}{v.s.tr.toFixed(1)} {v.u}</span></div></div>)}</div>
+    <div className="grid md:grid-cols-2 gap-4">
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100"><h3 className="text-sm font-bold text-slate-900 mb-3">Heart Rate</h3><Ch {...mkC(mkD('heartRate'),'HR','#ef4444',50,150)} h={220}/></div>
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100"><h3 className="text-sm font-bold text-slate-900 mb-3">SpO2</h3><Ch {...mkC(mkD('spo2'),'SpO2','#3b82f6',85,100)} h={220}/></div>
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100"><h3 className="text-sm font-bold text-slate-900 mb-3">Temperature</h3><Ch {...mkC(mkD('temperature'),'Temp','#f59e0b',35,40)} h={220}/></div>
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100"><h3 className="text-sm font-bold text-slate-900 mb-3">Blood Pressure</h3><Ch type="line" data={{labels:mkD('systolicBP').map(x=>x.x),datasets:[{label:'Systolic',data:mkD('systolicBP').map(x=>x.y),borderColor:'#0d9488',borderWidth:2,fill:false,tension:.3,pointRadius:2},{label:'Diastolic',data:mkD('diastolicBP').map(x=>x.y),borderColor:'#f59e0b',borderWidth:2,fill:false,tension:.3,pointRadius:2}]}} options={{scales:{y:{min:50,max:180,grid:{color:'#f1f5f9'},ticks:{font:{size:10}}},x:{grid:{display:false},ticks:{font:{size:9},maxRotation:45}}},plugins:{legend:{display:true,position:'top',labels:{font:{size:10},usePointStyle:true}},tooltip:{enabled:true}}}} h={220}/></div>
+    </div>
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════
+   PAGE: ALERTS
+   ════════════════════════════════════════════════════════ */
+function AlertsPage(){
+  const{alerts,resolveAlert,delAlert,nav}=useContext(Ctx);const[fil,setFil]=useState('all');const[vw,setVw]=useState(null);
+  const fd=alerts.filter(a=>{
+    if(fil==='all')return a.status!=='archived';
+    if(fil==='active')return a.status==='active';
+    if(fil==='resolved')return a.status==='resolved';
+    return a.sev===fil;
+  });
+  if(alerts.filter(a=>a.status!=='archived').length===0){
+    return <EmptyState icon="bell" title="No Alerts Yet" desc="Your health alerts will appear here when monitoring detects abnormal readings." btnLabel="Start Monitoring" btnAction={()=>nav('monitoring')} />;
+  }
+  return <div className="space-y-6 anim-fade">
+    <div className="flex flex-wrap items-center justify-between gap-4"><h2 className="text-lg font-bold text-slate-900">Health Alerts</h2><div className="flex gap-2 flex-wrap">{[{k:'all',l:'All'},{k:'critical',l:'Critical'},{k:'warning',l:'Warning'},{k:'active',l:'Active'},{k:'resolved',l:'Resolved'}].map(f=><button key={f.k} onClick={()=>setFil(f.k)} className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${fil===f.k?'bg-primary-600 text-white':'bg-white border border-slate-200 text-slate-600'}`}>{f.l}</button>)}</div></div>
+    {fd.length?<div className="space-y-3">{fd.map(a=><div key={a.id} className={`bg-white rounded-2xl p-5 shadow-sm border ${a.sev==='critical'?'border-red-200':'border-amber-200'} hover:shadow-md transition-all`}><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex items-start gap-3"><div className={`w-10 h-10 rounded-xl flex items-center justify-center ${a.sev==='critical'?'bg-red-50':'bg-amber-50'}`}><Ic name="alertTriangle" s={20} cn={a.sev==='critical'?'text-red-500':'text-amber-500'}/></div><div><p className="text-sm font-bold text-slate-900">{a.type}</p><p className="text-xs text-slate-500">{a.val} | {fDT(a.ts)}</p><div className="flex gap-2 mt-2"><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${a.sev==='critical'?'bg-red-100 text-red-700':'bg-amber-100 text-amber-700'}`}>{a.sev}</span><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${a.status==='active'?'bg-blue-100 text-blue-700':'bg-emerald-100 text-emerald-700'}`}>{a.status}</span></div></div></div><div className="flex gap-2">{a.status==='active'&&<button onClick={()=>resolveAlert(a.id)} className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-semibold transition"><Ic name="check" s={12}/></button>}<button onClick={()=>setVw(a)} className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold transition"><Ic name="eye" s={12}/></button><button onClick={()=>delAlert(a.id)} className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-xs font-semibold transition"><Ic name="trash" s={12}/></button></div></div></div>)}</div>:<div className="bg-white rounded-2xl p-12 shadow-sm border border-slate-100 text-center"><Ic name="bell" s={48} cn="text-slate-300 mx-auto mb-4 block"/><p className="text-slate-500">No alerts found in this category</p></div>}
+    {vw&&<div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={()=>setVw(null)}><div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl anim-up" onClick={e=>e.stopPropagation()}><div className="flex items-center justify-between mb-4"><h3 className="text-lg font-bold text-slate-900">Alert Details</h3><button onClick={()=>setVw(null)} className="p-1 rounded-lg hover:bg-slate-100"><Ic name="x" s={18}/></button></div><div className="space-y-3"><p className="text-sm"><span className="font-semibold">Type:</span> {vw.type}</p><p className="text-sm"><span className="font-semibold">Value:</span> {vw.val}</p><p className="text-sm"><span className="font-semibold">Severity:</span> {vw.sev}</p><p className="text-sm"><span className="font-semibold">Time:</span> {fDT(vw.ts)}</p><p className="text-sm"><span className="font-semibold">Status:</span> {vw.status}</p></div></div></div>}
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════
+   PAGE: HEALTH HISTORY
+   ════════════════════════════════════════════════════════ */
+function HistoryPage(){
+  const{readings,toast,nav}=useContext(Ctx);const[search,setSearch]=useState('');const[sortCol,setSortCol]=useState('ts');const[sortDir,setSortDir]=useState(-1);const[dateFil,setDateFil]=useState('');const[vw,setVw]=useState(null);
+  if(readings.length===0){
+    return <EmptyState icon="clock" title="No Health History Yet" desc="Your monitoring readings will appear here once you start monitoring." btnLabel="Start Monitoring" btnAction={()=>nav('monitoring')} />;
+  }
+  const filtered=useMemo(()=>{let d=[...readings];if(search){const s=search.toLowerCase();d=d.filter(h=>h.date.includes(s)||h.time.includes(s)||(h.heartRate+'').includes(s))}if(dateFil)d=d.filter(h=>h.date.includes(dateFil));d.sort((a,b)=>{const av=a[sortCol],bv=b[sortCol];return(av>bv?1:av<bv?-1:0)*sortDir});return d.slice(0,100)},[readings,search,sortCol,sortDir,dateFil]);
+  const rk=h=>calcRisk({...h,age:28});
+  const doExport=()=>{const data=filtered.map(h=>({Date:h.date,Time:h.time,HeartRate:h.heartRate,SpO2:h.spo2,Temperature:h.temperature,SystolicBP:h.systolicBP,DiastolicBP:h.diastolicBP}));expCSV(data,'health_history.csv');toast('CSV exported','success')};
+  const togSort=c=>{if(sortCol===c)setSortDir(d=>d*-1);else{setSortCol(c);setSortDir(-1)}};
+  return <div className="space-y-6 anim-fade">
+    <div className="flex flex-wrap items-center justify-between gap-4"><h2 className="text-lg font-bold text-slate-900">Health History</h2><button onClick={doExport} className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl text-sm flex items-center gap-2 transition"><Ic name="download" s={16}/>Export CSV</button></div>
+    <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex flex-wrap gap-3 items-center"><div className="relative flex-1 min-w-[200px]"><Ic name="search" s={16} cn="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search readings..." className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none"/></div><input type="text" value={dateFil} onChange={e=>setDateFil(e.target.value)} placeholder="Filter by date..." className="px-4 py-2.5 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none w-40"/></div>
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="bg-slate-50 border-b border-slate-100">{[{k:'date',l:'Date'},{k:'time',l:'Time'},{k:'heartRate',l:'HR'},{k:'spo2',l:'SpO2'},{k:'temperature',l:'Temp'},{k:'systolicBP',l:'BP'},{k:'ts',l:'Risk'}].map(c=><th key={c.k} onClick={()=>togSort(c.k)} className="py-3 px-3 text-left font-semibold text-slate-600 cursor-pointer hover:text-primary-600">{c.l} {sortCol===c.k&&(sortDir===1?'↑':'↓')}</th>)}<th className="py-3 px-3 text-left font-semibold text-slate-600">Actions</th></tr></thead>
+    <tbody>{filtered.map((h,i)=>{const r=rk(h);return <tr key={h.id} className="border-b border-slate-50 hover:bg-slate-50/50"><td className="py-2.5 px-3 text-slate-600">{h.date}</td><td className="py-2.5 px-3 text-slate-600">{h.time}</td><td className={`py-2.5 px-3 font-semibold ${h.heartRate>100?'text-red-600':'text-slate-700'}`}>{h.heartRate}</td><td className={`py-2.5 px-3 font-semibold ${h.spo2<95?'text-red-600':'text-slate-700'}`}>{h.spo2}%</td><td className={`py-2.5 px-3 font-semibold ${h.temperature>37.5?'text-red-600':'text-slate-700'}`}>{h.temperature}°C</td><td className="py-2.5 px-3 font-semibold text-slate-700">{h.systolicBP}/{h.diastolicBP}</td><td className="py-2.5 px-3"><span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{color:r.color,backgroundColor:r.color+'20'}}>{r.level}</span></td><td className="py-2.5 px-3"><button onClick={()=>setVw(h)} className="text-primary-600 hover:text-primary-700 font-medium">View</button></td></tr>})}</tbody></table></div></div>
+    {vw&&<div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={()=>setVw(null)}><div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl anim-up" onClick={e=>e.stopPropagation()}><div className="flex items-center justify-between mb-4"><h3 className="text-lg font-bold text-slate-900">Reading Details</h3><button onClick={()=>setVw(null)} className="p-1 rounded-lg hover:bg-slate-100"><Ic name="x" s={18}/></button></div><div className="space-y-2">{Object.entries({Date:vw.date,Time:vw.time,'Heart Rate':vw.heartRate+' BPM',SpO2:vw.spo2+'%',Temperature:vw.temperature+'°C','Blood Pressure':vw.systolicBP+'/'+vw.diastolicBP+' mmHg'}).map(([k,v])=><p key={k} className="text-sm"><span className="font-semibold text-slate-700">{k}:</span> <span className="text-slate-600">{v}</span></p>)}</div></div></div>}
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════
+   PAGE: AI ASSISTANT
+   ════════════════════════════════════════════════════════ */
+function AssistantPage(){
+  const[msgs,setMsgs]=useState([{from:'bot',text:'Hello! I am your AI Health Information Assistant. I can answer general educational questions about health vitals, medical terminology, and monitoring concepts. What would you like to know?',ts:Date.now()}]);
+  const[input,setInput]=useState('');const[typing,setTyping]=useState(false);const chatRef=useRef(null);
+  const send=()=>{if(!input.trim())return;const txt=input.trim();setMsgs(p=>[...p,{from:'user',text:txt,ts:Date.now()}]);setInput('');setTyping(true);setTimeout(()=>{setTyping(false);setMsgs(p=>[...p,{from:'bot',text:chatResp(txt),ts:Date.now()}])},800+Math.random()*1200)};
+  useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight},[msgs,typing]);
+  const suggestions=['What does SpO2 mean?','What is a normal heart rate?','How is blood pressure measured?','What causes a fever?','Explain health risk assessment'];
+  return <div className="anim-fade flex flex-col h-[calc(100vh-8rem)]">
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col flex-1 overflow-hidden">
+      <div className="p-4 border-b border-slate-100 flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center"><Ic name="brain" s={20} cn="text-white"/></div><div><p className="text-sm font-bold text-slate-900">AI Health Assistant</p><p className="text-[10px] text-slate-500">General educational health information</p></div></div>
+      <div ref={chatRef} className="flex-1 overflow-y-auto p-4 space-y-4 sb">{msgs.map((m,i)=><div key={i} className={`flex ${m.from==='user'?'justify-end':'justify-start'} anim-slide`}><div className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${m.from==='user'?'bg-primary-600 text-white rounded-br-md':'bg-slate-100 text-slate-700 rounded-bl-md'}`}>{m.text}</div></div>)}{typing&&<div className="flex justify-start"><div className="bg-slate-100 px-4 py-3 rounded-2xl rounded-bl-md flex gap-1.5"><span className="w-2 h-2 bg-slate-400 rounded-full td"/><span className="w-2 h-2 bg-slate-400 rounded-full td"/><span className="w-2 h-2 bg-slate-400 rounded-full td"/></div></div>}</div>
+      <div className="p-4 border-t border-slate-100"><div className="flex flex-wrap gap-2 mb-3">{suggestions.map((s,i)=><button key={i} onClick={()=>{setInput(s)}} className="px-3 py-1.5 bg-primary-50 hover:bg-primary-100 text-primary-700 rounded-lg text-xs font-medium transition">{s}</button>)}</div><div className="flex gap-2"><input type="text" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="Ask a health question..." className="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none"/><button onClick={send} className="px-5 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition-all flex items-center gap-2"><Ic name="send" s={16}/></button></div><p className="text-[10px] text-slate-400 mt-2">This assistant provides general educational information only. Not for medical diagnosis or prescriptions.</p></div>
+    </div>
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════
+   PAGE: REPORTS
+   ════════════════════════════════════════════════════════ */
+function ReportsPage(){
+  const{auth,profile,readings,reports,toast,refreshAll,nav}=useContext(Ctx);
+  const[ld,setLd]=useState(false);
+  
+  const handleGenerate=async()=>{
+    if(readings.length===0){toast('No health data available to generate a report.','warning');return;}
+    setLd(true);
+    try{
+      await api.generateReport({userId:auth.userId});
+      toast('Report generated successfully!','success');
+      refreshAll();
+    }catch(e){toast(e.message,'error');}
+    setLd(false);
+  };
+  
+  if(readings.length===0){
+    return <EmptyState icon="fileText" title="No Reports Available" desc="Start monitoring to collect health readings. Reports can be generated once you have data." btnLabel="Start Monitoring" btnAction={()=>nav('monitoring')} />;
+  }
+  
+  return <div className="space-y-6 anim-fade">
+    <div className="flex flex-wrap items-center justify-between gap-4 no-print"><h2 className="text-lg font-bold text-slate-900">Health Reports</h2><button onClick={handleGenerate} disabled={ld} className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl text-sm flex items-center gap-2 transition disabled:opacity-50">{ld?<div className="spinner"/>:<><Ic name="plus" s={16}/>Generate Report</>}</button></div>
+    
+    {reports.length===0?(
+      <EmptyState icon="fileText" title="No Reports Yet" desc="Click 'Generate Report' to create a summary of your health data." />
+    ):(
+      <div className="space-y-4">
+        {reports.map(r=>(
+          <div key={r.reportId} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Health Report</h3>
+                <p className="text-xs text-slate-500">Generated: {fDT(r.generatedAt)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-slate-500">Risk Score</p>
+                <p className="text-lg font-bold" style={{color:r.riskScore<25?'#10b981':r.riskScore<50?'#f59e0b':r.riskScore<75?'#f97316':'#ef4444'}}>{r.riskScore}/100</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              {r.summary&&r.summary.heartRate&&<div className="bg-slate-50 rounded-xl p-3"><p className="text-[10px] text-slate-500">Heart Rate (Avg)</p><p className="text-sm font-bold text-slate-900">{r.summary.heartRate.avg} BPM</p></div>}
+              {r.summary&&r.summary.spo2&&<div className="bg-slate-50 rounded-xl p-3"><p className="text-[10px] text-slate-500">SpO2 (Avg)</p><p className="text-sm font-bold text-slate-900">{r.summary.spo2.avg}%</p></div>}
+              {r.summary&&r.summary.temperature&&<div className="bg-slate-50 rounded-xl p-3"><p className="text-[10px] text-slate-500">Temp (Avg)</p><p className="text-sm font-bold text-slate-900">{r.summary.temperature.avg}°C</p></div>}
+              {r.summary&&r.summary.systolicBP&&<div className="bg-slate-50 rounded-xl p-3"><p className="text-[10px] text-slate-500">Sys BP (Avg)</p><p className="text-sm font-bold text-slate-900">{r.summary.systolicBP.avg} mmHg</p></div>}
+            </div>
+            <div className="flex justify-between text-xs text-slate-500">
+              <span>Period: {r.dateRange}</span>
+              <span>Total Readings: {r.summary?.totalReadings||0}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════
+   PAGE: PROFILE
+   ════════════════════════════════════════════════════════ */
+function ProfilePage(){
+  const{auth,profile,toast,refreshAll}=useContext(Ctx);const[edit,setEdit]=useState(false);const[f,setF]=useState({...profile});const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const save=async()=>{
+    try{
+      await api.updateProfile({
+        userId:auth.userId, name:f.name, age:f.age, gender:f.gender, contact:f.contact,
+        emergencyContact:f.emergency, bloodGroup:f.blood, height:f.height, weight:f.weight
+      });
+      toast('Profile updated','success');
+      setEdit(false);
+      refreshAll();
+    }catch(e){toast(e.message,'error');}
+  };
+  if(!profile) return <div className="flex justify-center py-12"><div className="spinner" style={{width:32,height:32,borderWidth:4}}/></div>;
+  return <div className="space-y-6 anim-fade">
+    <div className="max-w-2xl mx-auto">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="h-32 bg-gradient-to-r from-primary-500 to-primary-700 relative"><div className="absolute -bottom-12 left-6"><div className="w-24 h-24 rounded-2xl bg-white shadow-lg flex items-center justify-center border-4 border-white"><span className="text-3xl font-black text-primary-600">{profile.name?.[0]}{profile.name?.split(' ')[1]?.[0]||''}</span></div></div></div>
+        <div className="pt-16 p-6 space-y-6">
+          <div className="flex items-center justify-between"><h3 className="text-lg font-bold text-slate-900">Personal Information</h3>{!edit?<button onClick={()=>setEdit(true)} className="px-4 py-2 bg-primary-50 hover:bg-primary-100 text-primary-700 font-semibold rounded-xl text-sm flex items-center gap-2 transition"><Ic name="edit" s={14}/>Edit</button>:<div className="flex gap-2"><button onClick={save} className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl text-sm flex items-center gap-2"><Ic name="save" s={14}/>Save</button><button onClick={()=>{setF({...profile});setEdit(false)}} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm">Cancel</button></div>}</div>
+          <div className="grid sm:grid-cols-2 gap-4">{[{k:'name',l:'Full Name'},{k:'email',l:'Email'},{k:'age',l:'Age'},{k:'gender',l:'Gender'},{k:'contact',l:'Contact'},{k:'emergency',l:'Emergency Contact'},{k:'blood',l:'Blood Group'},{k:'height',l:'Height'},{k:'weight',l:'Weight'}].map(x=><div key={x.k}><label className="text-xs font-semibold text-slate-500 mb-1 block">{x.l}</label>{edit?<input type="text" value={f[x.k]||''} onChange={e=>set(x.k,e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-sm outline-none"/>:<p className="text-sm text-slate-700 font-medium py-2">{profile[x.k]||'-'}</p>}</div>)}</div>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════
+   PAGE: SETTINGS
+   ════════════════════════════════════════════════════════ */
+function SettingsPage(){
+  const{dark,setDark,notifs,setNotifs,toast,auth}=useContext(Ctx);
+  const[settings,setSettings]=useState({emailNotifs:true,pushNotifs:true,soundAlerts:false,dataShare:false,analytics:true,autoRefresh:true,refreshInterval:5});
+  const tog=k=>{setSettings(p=>({...p,[k]:!p[k]}));toast('Setting updated','success')};
+  const Toggle=({on,onToggle})=><button onClick={onToggle} className={`relative w-11 h-6 rounded-full transition-all ${on?'bg-primary-600':'bg-slate-300'}`}><span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${on?'translate-x-5':''}`}/></button>;
+  return <div className="space-y-6 anim-fade">
+    <div className="max-w-2xl mx-auto space-y-4">
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100"><h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2"><Ic name="info" s={18} cn="text-primary-600"/>Account Status</h3><div className="flex items-center justify-between py-2"><div><p className="text-sm font-medium text-slate-700">Backend Connection</p><p className="text-xs text-slate-500">{CONFIG.GOOGLE_APPS_SCRIPT_URL?'Connected to Google Apps Script':'Not configured'}</p></div><span className={`w-2.5 h-2.5 rounded-full ${CONFIG.GOOGLE_APPS_SCRIPT_URL?'bg-emerald-500':'bg-red-500'}`}/></div></div>
+
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100"><h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2"><Ic name="settings" s={18} cn="text-primary-600"/>Appearance</h3><div className="flex items-center justify-between py-3"><div><p className="text-sm font-medium text-slate-700">Dark Mode</p><p className="text-xs text-slate-500">Switch to dark theme</p></div><Toggle on={dark} onToggle={()=>{setDark(!dark);toast('Theme toggled','info')}}/></div></div>
+
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100"><h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2"><Ic name="bell" s={18} cn="text-primary-600"/>Notifications</h3><div className="space-y-1">{[{k:'emailNotifs',l:'Email Notifications',d:'Receive alerts via email'},{k:'pushNotifs',l:'Push Notifications',d:'Browser push notifications'},{k:'soundAlerts',l:'Sound Alerts',d:'Play sound on critical alerts'}].map(s=><div key={s.k} className="flex items-center justify-between py-3"><div><p className="text-sm font-medium text-slate-700">{s.l}</p><p className="text-xs text-slate-500">{s.d}</p></div><Toggle on={settings[s.k]} onToggle={()=>tog(s.k)}/></div>)}</div></div>
+
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100"><h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2"><Ic name="shield" s={18} cn="text-primary-600"/>Privacy & Data</h3><div className="space-y-1">{[{k:'dataShare',l:'Data Sharing',d:'Share anonymized data for research'},{k:'analytics',l:'Usage Analytics',d:'Help improve the application'}].map(s=><div key={s.k} className="flex items-center justify-between py-3"><div><p className="text-sm font-medium text-slate-700">{s.l}</p><p className="text-xs text-slate-500">{s.d}</p></div><Toggle on={settings[s.k]} onToggle={()=>tog(s.k)}/></div>)}</div><div className="mt-4 p-3 bg-emerald-50 rounded-xl text-xs text-emerald-800 flex items-start gap-2"><Ic name="check" s={14} cn="text-emerald-600 mt-0.5 flex-shrink-0"/><span>Your health data is securely stored in your own Google Sheet and is isolated to your account.</span></div></div>
+    </div>
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════
+   APP
+   ════════════════════════════════════════════════════════ */
+function App(){
+  return <Provider><AppInner/></Provider>;
+}
+
+function AppInner(){
+  const{page,auth,profile,loading}=useContext(Ctx);
+  
+  if (!auth) {
+    const P = page === 'register' ? RegisterPage : (page === 'login' ? LoginPage : LandingPage);
+    return <><P/><Toasts/></>;
+  }
+  
+  if (loading && !profile) {
+    return <div className="min-h-screen flex items-center justify-center"><div className="spinner" style={{width:40,height:40,borderWidth:4}}/></div>;
+  }
+  
+  if (profile && !profile.profileCompleted) {
+    return <><ProfileSetupPage/><Toasts/></>;
+  }
+  
+  const pages = {dashboard:DashboardPage,monitoring:LiveMonitoringPage,analysis:AnalysisPage,trends:TrendsPage,alerts:AlertsPage,history:HistoryPage,assistant:AssistantPage,reports:ReportsPage,profile:ProfilePage,settings:SettingsPage};
+  const P = pages[page] || DashboardPage;
+  return (
+    <div className="flex min-h-screen">
+      <Sidebar/>
+      <div className="flex-1 flex flex-col min-w-0">
+        <Header/>
+        <main className="flex-1 p-4 lg:p-6 overflow-y-auto">
+          <P/>
+        </main>
+      </div>
+      <Toasts/>
+    </div>
+  );
+}
+
+/* ── RENDER ── */
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
 </body>
 </html>
